@@ -3,3 +3,11 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 .venv/
+outputs/predictions/*
+outputs/evaluation/*
+outputs/checkpoints/*
+outputs/figures/*
+!outputs/predictions/.gitkeep
+!outputs/evaluation/.gitkeep
+!outputs/checkpoints/.gitkeep
+!outputs/figures/.gitkeep

@@ -2,3 +2,5 @@ datasets
 pandas
 pyarrow
 matplotlib
+scikit-learn
+numpy
