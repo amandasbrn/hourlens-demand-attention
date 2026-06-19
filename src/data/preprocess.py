@@ -35,7 +35,7 @@ def sliding_window(dataset):
     for i in range(1, 25):
         dataset[f'lag_{i}'] = dataset['demand'].shift(i)
 
-    dataset = dataset.fillna(0)
+    dataset = dataset.dropna().reset_index(drop=True)
     return dataset
 
 def main() -> None:
