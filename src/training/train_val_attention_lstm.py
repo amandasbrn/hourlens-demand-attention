@@ -14,11 +14,13 @@ from sklearn.preprocessing import StandardScaler
 from src.models.temporal_attention import LSTMAttentionForecaster
 from src.evaluation.metrics import calculate_regression_metrics
 
+MODEL_NAME = "lstm_attention_reg"
+
 PROCESSED_PATH = Path("data/processed/rolling_sample.parquet")
-PRED_PATH = Path("outputs/predictions/lstm_attn_reg_predictions.parquet")
-METRICS_PATH = Path("outputs/evaluation/lstm_attn_reg_metrics.csv")
-CHECKPOINT_PATH = Path("outputs/checkpoints/lstm_reg_attn.pt")
-ATTENTION_PATH = Path("outputs/attention/lstm_attention_reg_weights.parquet")
+PRED_PATH = Path(f"outputs/predictions/{MODEL_NAME}_predictions.parquet")
+METRICS_PATH = Path(f"outputs/evaluation/{MODEL_NAME}_metrics.csv")
+CHECKPOINT_PATH = Path(f"outputs/checkpoints/{MODEL_NAME}.pt")
+ATTENTION_PATH = Path(f"outputs/attention/{MODEL_NAME}_weights.parquet")
 
 def read_processed(input_path: Path) -> pd.DataFrame:
     df = pd.read_parquet(input_path)
@@ -36,13 +38,19 @@ def prepare_lstm(dataset):
 
     # split data by time
 
-    split_idx = int(len(X) * 0.8)
+    train_end = int(len(X) * 0.70)
+    val_end = int(len(X) * 0.85)
 
-    X_train = X[:split_idx]
-    X_test = X[split_idx:]
+    X_train = X[:train_end]
+    X_val = X[train_end:val_end]
+    X_test = X[val_end:]
 
-    y_train = y[:split_idx]
-    y_test = y[split_idx:]
+    y_train = y[:train_end]
+    y_val = y[train_end:val_end]
+    y_test = y[val_end:]
+
+    val_df = dataset.iloc[train_end:val_end].copy()
+    test_df = dataset.iloc[val_end:].copy()
 
     # normalization
 
@@ -52,54 +60,87 @@ def prepare_lstm(dataset):
     # X_train_scaled, X_test_scaled = scaler(x_scaler, X_train, X_test)
     # y_train_scaled, y_test_scaled = scaler(y_scaler, y_train, y_test)
 
-    X_train_scaled = x_scaler.fit_transform(X_train.reshape(-1,1))
-    X_train_scaled = X_train_scaled.reshape(X_train.shape)
-
-    X_test_scaled = x_scaler.transform(X_test.reshape(-1, 1))
-    X_test_scaled = X_test_scaled.reshape(X_test.shape)
+    X_train_scaled = x_scaler.fit_transform(X_train.reshape(-1, 1)).reshape(X_train.shape)
+    X_val_scaled = x_scaler.transform(X_val.reshape(-1, 1)).reshape(X_val.shape)
+    X_test_scaled = x_scaler.transform(X_test.reshape(-1, 1)).reshape(X_test.shape)
 
     y_train_scaled = y_scaler.fit_transform(y_train.reshape(-1, 1))
+    y_val_scaled = y_scaler.transform(y_val.reshape(-1, 1))
     y_test_scaled = y_scaler.transform(y_test.reshape(-1, 1))
 
     # convert to tensor
     X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
+    X_val_tensor = torch.tensor(X_val_scaled, dtype=torch.float32)
     X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
 
     y_train_tensor = torch.tensor(y_train_scaled, dtype=torch.float32)
+    y_val_tensor = torch.tensor(y_val_scaled, dtype=torch.float32)
     y_test_tensor = torch.tensor(y_test_scaled, dtype=torch.float32)
 
     # create dataloader
 
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+    val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
     test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
 
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-    test_df = dataset.iloc[split_idx:].copy()
+    return train_loader, val_loader, test_loader, y_scaler, y_val_scaled, y_test_scaled, val_df, test_df
 
-    return train_loader, test_loader, y_scaler, y_test_scaled, test_df
+def train_model(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    loss_fn,
+    optimizer,
+    num_epochs: int,
+    checkpoint_path: Path,
+    patience: int = 20,
+) -> nn.Module:
+    best_val_loss = float("inf")
+    patience_counter = 0
 
-def train_model(model: nn.Module, train_loader: DataLoader, loss_fn, optimizer, num_epochs:int) -> nn.Module:
-    for epoch in range(num_epochs): # for each epoch
-        model.train() # set model to train mode
-        train_loss = 0.0 # set train loss
-        for X_batch, y_batch in train_loader: # for each batch
-            y_pred, _ = model(X_batch) # predict
-            loss = loss_fn(y_pred, y_batch) # compute loss y_pred vs actual (y_batch)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
-            optimizer.zero_grad() # clear old gradients
-            loss.backward() # backprop
-            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step() # update weights
+    for epoch in range(num_epochs):
+        model.train()
+        train_loss = 0.0
+
+        for X_batch, y_batch in train_loader:
+            y_pred, _ = model(X_batch)
+            loss = loss_fn(y_pred, y_batch)
+
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
 
             train_loss += loss.item()
-        
+
         avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = evaluate_loss(model, val_loader, loss_fn)
+
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            patience_counter = 0
+            torch.save(model.state_dict(), checkpoint_path)
+        else:
+            patience_counter += 1
 
         if (epoch + 1) % 10 == 0:
-            print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_train_loss:.4f}")
-    
+            print(
+                f"Epoch [{epoch+1}/{num_epochs}], "
+                f"Train Loss: {avg_train_loss:.4f}, "
+                f"Val Loss: {avg_val_loss:.4f}"
+            )
+
+        if patience_counter >= patience:
+            print(f"Early stopping at epoch {epoch+1}")
+            break
+
+    model.load_state_dict(torch.load(checkpoint_path))
     return model
 
 def predict(model: nn.Module, test_loader: DataLoader) -> np.ndarray:
@@ -118,12 +159,24 @@ def predict(model: nn.Module, test_loader: DataLoader) -> np.ndarray:
 
     return y_pred_scaled, attention_weights
 
+def evaluate_loss(model: nn.Module, data_loader: DataLoader, loss_fn) -> float:
+    model.eval()
+    total_loss = 0.0
+
+    with torch.no_grad():
+        for X_batch, y_batch in data_loader:
+            y_pred, _ = model(X_batch)
+            loss = loss_fn(y_pred, y_batch)
+            total_loss += loss.item()
+
+    return total_loss / len(data_loader)
+
 def main() -> None:
     torch.manual_seed(42)
     np.random.seed(42)
 
     data = read_processed(PROCESSED_PATH)
-    train_loader, test_loader, y_scaler, y_test_scaled, test_df = prepare_lstm(data)
+    train_loader, val_loader, test_loader, y_scaler, y_val_scaled, y_test_scaled, val_df, test_df = prepare_lstm(data)
 
     ### MODEL TRAINING ###
 
@@ -143,14 +196,17 @@ def main() -> None:
     # print(attention_weights[0].sum())
 
     loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
 
     model = train_model(
         model=model,
         train_loader=train_loader,
+        val_loader=val_loader,
         loss_fn=loss_fn,
         optimizer=optimizer,
-        num_epochs=50
+        num_epochs=250,
+        checkpoint_path=CHECKPOINT_PATH,
+        patience=20,
     )
 
     CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -174,12 +230,12 @@ def main() -> None:
     attention_predictions = test_df[["datetime"]].copy()
     attention_predictions["actual"] = y_test_original.flatten()
     attention_predictions["prediction"] = y_pred_original.flatten()
-    attention_predictions["model"] = "lstm_attention"
+    attention_predictions["model"] = MODEL_NAME
 
     attention_cols = [f"attn_t_minus_{i}" for i in range(24, 0, -1)]
     attention_df = test_df[["datetime"]].copy()
     attention_df[attention_cols] = attention_weights
-    attention_df["model"] = "lstm_attention"
+    attention_df["model"] = MODEL_NAME
 
     ATTENTION_PATH.parent.mkdir(parents=True, exist_ok=True)
     attention_df.to_parquet(ATTENTION_PATH, index=False)
