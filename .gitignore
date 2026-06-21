@@ -11,3 +11,5 @@ outputs/figures/*
 !outputs/evaluation/.gitkeep
 !outputs/checkpoints/.gitkeep
 !outputs/figures/.gitkeep
+outputs/attention/*
+!outputs/attention/.gitkeep

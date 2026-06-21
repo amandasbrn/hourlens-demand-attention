@@ -43,7 +43,7 @@ def save_dataframe(df: pd.DataFrame, output_path: Path) -> None:
 
 def main() -> None: # meaning the function returns nothing
     split = "train"
-    n_rows = 10_000
+    n_rows = 100_000
 
     dataset = load_hf_split(split=split)
     dataset = sample_dataset(dataset, n_rows=n_rows)
@@ -54,7 +54,7 @@ def main() -> None: # meaning the function returns nothing
 
     # {len(df):,} = :, is thousand separator
     print(f"Saved {len(df):,} rows to {output_path}")
-    print(f"Columns: {list(df.columns)}")
+    print(f"Rows: {df.shape[0]}, Columns: {list(df.columns)}")
     print(df.head())
 
 if __name__ == "__main__":
