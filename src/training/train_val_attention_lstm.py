@@ -182,7 +182,7 @@ def main() -> None:
 
     model = LSTMAttentionForecaster(
         input_size=1,
-        hidden_size=32,
+        hidden_size=128,
         num_layers=1,
         output_size=1,
     )
@@ -196,7 +196,7 @@ def main() -> None:
     # print(attention_weights[0].sum())
 
     loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     model = train_model(
         model=model,
@@ -204,9 +204,9 @@ def main() -> None:
         val_loader=val_loader,
         loss_fn=loss_fn,
         optimizer=optimizer,
-        num_epochs=250,
+        num_epochs=350,
         checkpoint_path=CHECKPOINT_PATH,
-        patience=20,
+        patience=40,
     )
 
     CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
