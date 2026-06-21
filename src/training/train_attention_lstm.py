@@ -15,10 +15,10 @@ from src.models.temporal_attention import LSTMAttentionForecaster
 from src.evaluation.metrics import calculate_regression_metrics
 
 PROCESSED_PATH = Path("data/processed/rolling_sample.parquet")
-PRED_PATH = Path("outputs/predictions/lstm_attn_reg_predictions.parquet")
-METRICS_PATH = Path("outputs/evaluation/lstm_attn_reg_metrics.csv")
-CHECKPOINT_PATH = Path("outputs/checkpoints/lstm_reg_attn.pt")
-ATTENTION_PATH = Path("outputs/attention/lstm_attention_reg_weights.parquet")
+PRED_PATH = Path("outputs/predictions/lstm_attention_predictions.parquet")
+METRICS_PATH = Path("outputs/evaluation/lstm_attention_metrics.csv")
+CHECKPOINT_PATH = Path("outputs/checkpoints/lstm_attention.pt")
+ATTENTION_PATH = Path("outputs/attention/lstm_attention_weights.parquet")
 
 def read_processed(input_path: Path) -> pd.DataFrame:
     df = pd.read_parquet(input_path)
