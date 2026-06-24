@@ -13,3 +13,8 @@ outputs/figures/*
 !outputs/figures/.gitkeep
 outputs/attention/*
 !outputs/attention/.gitkeep
+!outputs/evaluation/store_metrics_summary.csv
+!outputs/predictions/store_random_forest_predictions.parquet
+!outputs/predictions/store_lstm_baseline_predictions.parquet
+!outputs/predictions/store_lstm_attention_reg_predictions.parquet
+!outputs/attention/store_lstm_attention_reg_weights.parquet
