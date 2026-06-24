@@ -40,6 +40,8 @@ Instead of only forecasting one global demand number, this project forecasts dem
 
 ## Dashboard Preview
 
+Link to dashboard: https://hourlens-demand-attention-j7przcir2h9tc8boz7yrxw.streamlit.app/ 
+
 The Streamlit dashboard includes:
 
 1. **Model performance**  
