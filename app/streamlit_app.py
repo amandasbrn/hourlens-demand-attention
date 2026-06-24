@@ -50,11 +50,12 @@ prediction_df["model_display"] = prediction_df["model"].map(MODEL_LABELS)
 
 with tab1:
     st.header("Summary")
+    st.write("LSTM baseline wins by a tiny margin, but Attention LSTM stays close and gives us the extra perk of seeing which past hours influenced the forecast.")
     metrics_df = load_csv(METRICS_PATH)
     metrics_df["model_display"] = metrics_df["model"].map(MODEL_LABELS)
     best_model = metrics_df.sort_values("mae").iloc[0]
 
-    st.metric("best model", best_model['model_display'], width='content')
+    st.metric("Best accuracy", best_model['model_display'], width='content')
     col1, col2 = st.columns(2)
     col1.metric("Best MAE", f"{float(best_model['mae']):.4f}")
     col2.metric("Best RMSE", f"{float(best_model['rmse']):.4f}")
