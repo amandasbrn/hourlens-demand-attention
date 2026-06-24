@@ -82,7 +82,7 @@ class TemporalAttention(nn.Module):
         return context_vector, attention_weights
 
 class LSTMAttentionForecaster(nn.Module):
-    def __init__(self, input_size:int, hidden_size:int, num_layers:int, output_size:int, dropout: float = 0.2):
+    def __init__(self, input_size:int, hidden_size:int, num_layers:int, output_size:int, dropout: float = 0.1):
         super().__init__()
         
         self.lstm = nn.LSTM(
@@ -93,17 +93,17 @@ class LSTMAttentionForecaster(nn.Module):
         )
         
         self.attention = TemporalAttention(hidden_size)
-        #self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(hidden_size, output_size) # # converts attention context into prediction
 
     def forward(self, x):
         lstm_out, _ = self.lstm(x) # output shape = (batch_size, 24 (sequence length), hidden_size)
 
-        #lstm_out = self.dropout(lstm_out)
+        lstm_out = self.dropout(lstm_out)
 
         context_vector, attention_weights = self.attention(lstm_out)
 
-        #context_vector = self.dropout(context_vector)
+        context_vector = self.dropout(context_vector)
 
         prediction = self.fc(context_vector)
 

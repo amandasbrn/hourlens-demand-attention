@@ -13,27 +13,42 @@ def preprocess(input_path: Path) -> pd.DataFrame:
     df_hourly = df_hourly.explode(['hours_sale','hour'], ignore_index=True)
     df_hourly['hours_sale'] = df_hourly['hours_sale'].astype(float)
     
-    hourly_demand = (
-        df_hourly.groupby(['dt','hour'], as_index=False).agg(demand=('hours_sale', 'sum'))
+    store_hourly_demand = (
+    df_hourly.groupby(["city_id", "store_id", "dt", "hour"], as_index=False)
+    .agg(demand=("hours_sale", "sum"))
     )
 
-    hourly_demand['dt'] = pd.to_datetime(hourly_demand['dt'])
-    hourly_demand['datetime'] = hourly_demand['dt'] + pd.to_timedelta(hourly_demand['hour'], unit='h')
+    store_hourly_demand["dt"] = pd.to_datetime(store_hourly_demand["dt"])
 
-    if hourly_demand["datetime"].duplicated().any():
-        raise ValueError("Duplicate datetime values found after preprocessing.")
+    store_hourly_demand["datetime"] = (
+    store_hourly_demand["dt"]
+    + pd.to_timedelta(store_hourly_demand["hour"], unit="h")
+    )
+
+    store_hourly_demand = store_hourly_demand[
+    ["city_id", "store_id", "datetime", "dt", "hour", "demand"]
+    ]
+
+    store_hourly_demand = store_hourly_demand.sort_values(
+        ["city_id", "store_id", "datetime"]
+    ).reset_index(drop=True)
+
+    if store_hourly_demand[["city_id", "store_id", "datetime"]].duplicated().any():
+        raise ValueError("Duplicate city/store/datetime values found after preprocessing.")
     
-    if not hourly_demand["hour"].between(0, 23).all():
+    if not store_hourly_demand["hour"].between(0, 23).all():
         raise ValueError("Hour column contains values outside 0-23.")
-
-    hourly_demand = hourly_demand[['datetime','dt','hour','demand']]
-    hourly_demand = hourly_demand.sort_values("datetime").reset_index(drop=True)
     
-    return hourly_demand
+    return store_hourly_demand
 
 def sliding_window(dataset):
+    dataset = dataset.sort_values(["city_id", "store_id", "datetime"]).reset_index(drop=True)
+
     for i in range(1, 25):
-        dataset[f'lag_{i}'] = dataset['demand'].shift(i)
+        dataset[f"lag_{i}"] = (
+            dataset.groupby(["city_id", "store_id"])["demand"]
+            .shift(i)
+        )
 
     dataset = dataset.dropna().reset_index(drop=True)
     return dataset
@@ -42,16 +57,16 @@ def main() -> None:
     PROCESSED_PATH = Path("data/processed")
     PROCESSED_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    hourly_demand = preprocess(RAW_PATH)
-    hourly_demand.to_parquet(f'{PROCESSED_PATH}/hourly_demand_sample.parquet', index=False)
+    store_hourly_demand = preprocess(RAW_PATH)
+    store_hourly_demand.to_parquet(f'{PROCESSED_PATH}/store_hourly_demand_sample.parquet', index=False)
 
-    rolling = sliding_window(hourly_demand)
-    rolling.to_parquet(f'{PROCESSED_PATH}/rolling_sample.parquet', index=False)
+    rolling = sliding_window(store_hourly_demand)
+    rolling.to_parquet(f'{PROCESSED_PATH}/store_rolling_sample.parquet', index=False)
 
-    n_row = hourly_demand.shape[0]
+    n_row = store_hourly_demand.shape[0]
     
     print(f"Saved hourly_demand dataset with {n_row} rows to {PROCESSED_PATH}")
-    print(hourly_demand.head())
+    print(store_hourly_demand.head())
     print(f"Saved rolling window dataset to {PROCESSED_PATH}")
     print(rolling.head())
 

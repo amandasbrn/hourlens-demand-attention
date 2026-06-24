@@ -16,15 +16,15 @@ st.info(
 tab1, tab2, tab3 = st.tabs([
     "Model performance",
     "Forecast explorer",
-    "Attention explanation",
+    "Explainable forecast (attention)",
 ])
 
-METRICS_PATH = Path("outputs/evaluation/metrics_summary.csv")
-RF_PRED_PATH = Path("outputs/predictions/random_forest_predictions.parquet")
-LSTM_BASE_PRED_PATH = Path("outputs/predictions/lstm_baseline_predictions.parquet")
-LSTM_ATTN_PRED_PATH = Path("outputs/predictions/lstm_attention_predictions.parquet")
-LSTM_ATTN_REG_PRED_PATH = Path("outputs/predictions/lstm_attention_reg_predictions.parquet")
-ATTENTION_PATH = Path(f"outputs/attention/lstm_attention_reg_weights.parquet")
+METRICS_PATH = Path("outputs/evaluation/store_metrics_summary.csv")
+RF_PRED_PATH = Path("outputs/predictions/store_random_forest_predictions.parquet")
+LSTM_BASE_PRED_PATH = Path("outputs/predictions/store_lstm_baseline_predictions.parquet")
+LSTM_ATTN_PRED_PATH = Path("outputs/predictions/store_lstm_attention_predictions.parquet")
+LSTM_ATTN_REG_PRED_PATH = Path("outputs/predictions/store_lstm_attention_reg_predictions.parquet")
+ATTENTION_PATH = Path(f"outputs/attention/store_lstm_attention_reg_weights.parquet")
 
 def load_csv(path: Path) -> pd.DataFrame:
     return pd.read_csv(path)
@@ -39,11 +39,14 @@ lstm_attn_reg_pred_df = load_parquet(LSTM_ATTN_REG_PRED_PATH)
 
 MODEL_LABELS = {
     "seasonal_naive_lag_24": "Seasonal naive baseline",
-    "random_forest": "Random Forest",
-    "lstm_baseline": "LSTM baseline",
-    "lstm_attention": "LSTM + Attention",
-    "lstm_attention_reg": "Regularized LSTM + Attention",
+    "store_random_forest": "Random Forest",
+    "store_lstm_baseline": "LSTM baseline",
+    "store_lstm_attention": "LSTM + Attention",
+    "store_lstm_attention_reg": "Regularized LSTM + Attention",
 }
+
+prediction_df = pd.concat([rf_pred_df, lstm_base_pred_df, lstm_attn_pred_df, lstm_attn_reg_pred_df])
+prediction_df["model_display"] = prediction_df["model"].map(MODEL_LABELS)
 
 with tab1:
     st.header("Summary")
@@ -86,19 +89,18 @@ with tab1:
     
     st.subheader("Key takeaway")
 
-    st.write(
-        """
-        The **Regularized LSTM + Attention** model performs best overall.
-        It improves over the plain LSTM baseline and strongly outperforms the seasonal naive baseline.
-        This suggests that using recent temporal patterns together with attention-based weighting improves hourly demand forecasting.
-        """
+    st.success(
+    "The LSTM baseline achieved the best accuracy, while the regularized attention model "
+    "remained competitive and provides interpretability through past-hour attention weights."
     )
 
 with tab2:
     st.header("Demand forecast")
+    selected_store = st.selectbox(
+    "Select store",
+    sorted(prediction_df["store_id"].unique())
+    )
 
-    prediction_df = pd.concat([rf_pred_df, lstm_base_pred_df, lstm_attn_pred_df, lstm_attn_reg_pred_df])
-    prediction_df["model_display"] = prediction_df["model"].map(MODEL_LABELS)
     model_choice = st.selectbox(
         "Select model",
         prediction_df["model_display"].unique()
@@ -106,7 +108,9 @@ with tab2:
 
     model_df = prediction_df[prediction_df['model_display']==model_choice]
 
-    st.markdown(f"### {model_df['model_display'].iloc[0]} actual vs prediction demand")
+    model_df = model_df[model_df["store_id"] == selected_store]
+
+    st.markdown(f"### {model_df['model_display'].iloc[0]} actual vs prediction demand for store {selected_store}.")
     st.caption(
     "A good forecast follows the same pattern as the actual demand line, especially around peaks and drops."
     )
@@ -134,6 +138,15 @@ with tab2:
 with tab3:
     st.header("Attention Visual")
     attention_weights_df = load_parquet(ATTENTION_PATH)
+
+    selected_store_attn = st.selectbox(
+    "Select store",
+    sorted(attention_weights_df["store_id"].unique()), key='attn'
+    )
+
+    attention_weights_df = attention_weights_df[
+        attention_weights_df["store_id"] == selected_store_attn
+    ]
 
     st.markdown("### Average attention by lag")
     st.caption(
@@ -167,7 +180,7 @@ with tab3:
 
     st.success(
         f"The model relies most on **t-{top_lag_num}**, "
-        f"which means the demand from **{top_lag_num} hour(s) before the forecast** "
+        f"which means the demand at store {selected_store} from **{top_lag_num} hour(s) before the forecast** "
         "is the most influential on average."
     )
 

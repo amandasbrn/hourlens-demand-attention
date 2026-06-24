@@ -53,7 +53,7 @@ def main() -> None: # meaning the function returns nothing
     save_dataframe(df, output_path)
 
     # {len(df):,} = :, is thousand separator
-    print(f"Saved {len(df):,} rows to {output_path}")
+    print(f"Saved {len(df):,} rows, {len(df['city_id'].unique())} cities, {len(df['store_id'].unique())} stores to {output_path}")
     print(f"Rows: {df.shape[0]}, Columns: {list(df.columns)}")
     print(df.head())
 

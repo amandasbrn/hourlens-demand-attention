@@ -10,22 +10,27 @@ from sklearn.preprocessing import StandardScaler
 from src.models.lstm_baseline import LSTMForecaster
 from src.evaluation.metrics import calculate_regression_metrics
 
-PROCESSED_PATH = Path("data/processed/rolling_sample.parquet")
-PRED_PATH = Path("outputs/predictions/lstm_baseline_predictions.parquet")
-METRICS_PATH = Path("outputs/evaluation/lstm_baseline_metrics.csv")
-CHECKPOINT_PATH = Path("outputs/checkpoints/lstm_baseline.pt")
+MODEL_NAME = "store_lstm_baseline"
+
+PROCESSED_PATH = Path("data/processed/store_rolling_sample.parquet")
+PRED_PATH = Path(f"outputs/predictions/{MODEL_NAME}_predictions.parquet")
+METRICS_PATH = Path(f"outputs/evaluation/{MODEL_NAME}_metrics.csv")
+CHECKPOINT_PATH = Path(f"outputs/checkpoints/{MODEL_NAME}.pt")
 
 def read_processed(input_path: Path) -> pd.DataFrame:
     df = pd.read_parquet(input_path)
-    df = df.sort_values("datetime").reset_index(drop=True)
     return df
 
 def prepare_lstm(dataset):
     lag_cols = [f"lag_{i}" for i in range(24, 0, -1)]
 
+    dataset = dataset.sort_values(["datetime", "city_id", "store_id"]).reset_index(drop=True)
+
     # reshape
     X = dataset[lag_cols].values
     y = dataset['demand'].values
+
+    metadata = dataset[["city_id", "store_id", "datetime"]].copy()
 
     X = X.reshape(X.shape[0], X.shape[1], 1)
 
@@ -71,7 +76,7 @@ def prepare_lstm(dataset):
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-    test_df = dataset.iloc[split_idx:].copy()
+    test_df = metadata.iloc[split_idx:].copy()
 
     return train_loader, test_loader, y_scaler, y_test_scaled, test_df
 
@@ -154,17 +159,21 @@ def main() -> None:
     print(f"LSTM MAE: {metrics['mae']:.4f}")
     print(f"LSTM RMSE: {metrics['rmse']:.4f}")
 
-    lstm_predictions = test_df[["datetime"]].copy()
-    lstm_predictions["actual"] = y_test_original.flatten()
-    lstm_predictions["prediction"] = y_pred_original.flatten()
-    lstm_predictions["model"] = "lstm_baseline"
+    prediction_df = test_df.copy()
+    prediction_df["actual"] = y_test_original.flatten()
+    prediction_df["prediction"] = y_pred_original.flatten()
+    prediction_df["model"] = MODEL_NAME
+
+    prediction_df = prediction_df[
+    ["city_id", "store_id", "datetime", "actual", "prediction", "model"]
+    ]
 
     PRED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    lstm_predictions.to_parquet(PRED_PATH, index=False)
+    prediction_df.to_parquet(PRED_PATH, index=False)
 
     metrics_df = pd.DataFrame([
         {
-            "model": "lstm_baseline",
+            "model": MODEL_NAME,
             "mae": metrics["mae"],
             "rmse": metrics["rmse"],
         }

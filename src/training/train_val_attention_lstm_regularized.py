@@ -14,9 +14,9 @@ from sklearn.preprocessing import StandardScaler
 from src.models.temporal_attention import LSTMAttentionForecaster
 from src.evaluation.metrics import calculate_regression_metrics
 
-MODEL_NAME = "lstm_attention_reg"
+MODEL_NAME = "store_lstm_attention_reg"
 
-PROCESSED_PATH = Path("data/processed/rolling_sample.parquet")
+PROCESSED_PATH = Path("data/processed/store_rolling_sample.parquet")
 PRED_PATH = Path(f"outputs/predictions/{MODEL_NAME}_predictions.parquet")
 METRICS_PATH = Path(f"outputs/evaluation/{MODEL_NAME}_metrics.csv")
 CHECKPOINT_PATH = Path(f"outputs/checkpoints/{MODEL_NAME}.pt")
@@ -24,11 +24,14 @@ ATTENTION_PATH = Path(f"outputs/attention/{MODEL_NAME}_weights.parquet")
 
 def read_processed(input_path: Path) -> pd.DataFrame:
     df = pd.read_parquet(input_path)
-    df = df.sort_values("datetime").reset_index(drop=True)
     return df
 
 def prepare_lstm(dataset):
     lag_cols = [f"lag_{i}" for i in range(24, 0, -1)]
+
+    dataset = dataset.sort_values(["datetime", "city_id", "store_id"]).reset_index(drop=True)
+
+    metadata = dataset[["city_id", "store_id", "datetime"]].copy()
 
     # reshape
     X = dataset[lag_cols].values
@@ -49,8 +52,8 @@ def prepare_lstm(dataset):
     y_val = y[train_end:val_end]
     y_test = y[val_end:]
 
-    val_df = dataset.iloc[train_end:val_end].copy()
-    test_df = dataset.iloc[val_end:].copy()
+    val_df = metadata.iloc[train_end:val_end].copy()
+    test_df = metadata.iloc[val_end:].copy()
 
     # normalization
 
@@ -114,7 +117,7 @@ def train_model(
 
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             train_loss += loss.item()
@@ -182,7 +185,7 @@ def main() -> None:
 
     model = LSTMAttentionForecaster(
         input_size=1,
-        hidden_size=128,
+        hidden_size=32,
         num_layers=1,
         output_size=1,
     )
@@ -196,7 +199,7 @@ def main() -> None:
     # print(attention_weights[0].sum())
 
     loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-6)
 
     model = train_model(
         model=model,
@@ -204,9 +207,9 @@ def main() -> None:
         val_loader=val_loader,
         loss_fn=loss_fn,
         optimizer=optimizer,
-        num_epochs=350,
+        num_epochs=250,
         checkpoint_path=CHECKPOINT_PATH,
-        patience=40,
+        patience=50,
     )
 
     CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -227,25 +230,34 @@ def main() -> None:
     print(f"LSTM Attention MAE: {metrics['mae']:.4f}")
     print(f"LSTM Attention RMSE: {metrics['rmse']:.4f}")
 
-    attention_predictions = test_df[["datetime"]].copy()
-    attention_predictions["actual"] = y_test_original.flatten()
-    attention_predictions["prediction"] = y_pred_original.flatten()
-    attention_predictions["model"] = MODEL_NAME
+    prediction_df = test_df.copy()
+    prediction_df["actual"] = y_test_original.flatten()
+    prediction_df["prediction"] = y_pred_original.flatten()
+    prediction_df["model"] = MODEL_NAME
+
+    prediction_df = prediction_df[
+        ["city_id", "store_id", "datetime", "actual", "prediction", "model"]
+    ]
 
     attention_cols = [f"attn_t_minus_{i}" for i in range(24, 0, -1)]
-    attention_df = test_df[["datetime"]].copy()
+
+    attention_df = test_df.copy()
     attention_df[attention_cols] = attention_weights
     attention_df["model"] = MODEL_NAME
+
+    attention_df = attention_df[
+        ["city_id", "store_id", "datetime"] + attention_cols + ["model"]
+    ]
 
     ATTENTION_PATH.parent.mkdir(parents=True, exist_ok=True)
     attention_df.to_parquet(ATTENTION_PATH, index=False)
 
     PRED_PATH.parent.mkdir(parents=True, exist_ok=True)
-    attention_predictions.to_parquet(PRED_PATH, index=False)
+    prediction_df.to_parquet(PRED_PATH, index=False)
 
     metrics_df = pd.DataFrame([
         {
-            "model": "lstm_attention",
+            "model": MODEL_NAME,
             "mae": metrics["mae"],
             "rmse": metrics["rmse"],
         }
