@@ -3,20 +3,21 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 
-st.set_page_config(page_title="HourLens", page_icon="📈")
+st.set_page_config(page_title="HourLens", page_icon="🚚", layout='centered')
 
 st.title("HourLens: Temporal Attention Demand Forecasting")
-st.markdown("### Forecast demand, compare models, and see which past hours mattered most.")
+st.markdown("### Demand forecasting, but make it explainable: see which past hours mattered most.")
 st.info(
     "This dashboard compares several forecasting models for hourly demand. "
     "Lower MAE and RMSE values mean better predictions. "
     "The attention chart shows which past hours the model relied on most."
 )
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "Model performance",
     "Forecast explorer",
     "Explainable forecast (attention)",
+    "Industry recommendation"
 ])
 
 METRICS_PATH = Path("outputs/evaluation/store_metrics_summary.csv")
@@ -247,3 +248,31 @@ with tab3:
     )
 
     st.plotly_chart(fig_single, use_container_width=True)
+
+with tab4:
+    best_model = metrics_df.sort_values("mae").iloc[0]
+
+    st.subheader("Industry Recommendation")
+
+    if best_model["model"] == "store_lstm_baseline":
+        st.success(
+            """
+            **Deploy pick: LSTM baseline**
+
+            It has the lowest forecasting error, so it is the safest choice for production accuracy.
+
+            **But:** Regularized LSTM + Attention is still close and gives extra explainability by showing which past hours influenced each forecast.
+
+            **Best setup:** use LSTM baseline for the main forecast, and Attention LSTM for insight/debugging.
+            """
+        )
+    else:
+        st.success(
+            f"""
+            **Deploy pick: {best_model["model_display"]}**
+
+            This model has the lowest MAE in the current experiment, making it the strongest option for forecasting accuracy.
+
+            For explainability, the Attention LSTM can still be used to inspect which past hours influenced the forecast.
+            """
+        )

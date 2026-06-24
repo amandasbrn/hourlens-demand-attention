@@ -1,9 +1,6 @@
-datasets
-pandas
-pyarrow
-matplotlib
-scikit-learn
-numpy
-torch
 streamlit
-pyplot
+pandas
+numpy
+plotly
+pyarrow
+scikit-learn
